@@ -76,7 +76,7 @@ private:
 
   //branches
   uint32_t detId_, layer_, ring_, istrip_; 
-  float noise_, APVgain_, lenght_; 
+  float noise_, gsim_, g1_, g2_, lenght_; 
   bool isTIB_, isTOB_, isTEC_, isTID_; 
 };
 
@@ -94,7 +94,7 @@ private:
 DB2Tree::DB2Tree(const edm::ParameterSet& iConfig):
   reader_(edm::FileInPath(std::string("CalibTracker/SiStripCommon/data/SiStripDetInfo.dat") ).fullPath()),
   detId_(0), layer_(0), ring_(0), istrip_(0),
-  noise_(0), APVgain_(0), lenght_(0),
+  noise_(0), gsim_(0), g1_(0), g2_(0), lenght_(0),
   isTIB_(0), isTOB_(0), isTEC_(0), isTID_(0)
 {
   edm::Service<TFileService> fs;
@@ -105,7 +105,9 @@ DB2Tree::DB2Tree(const edm::ParameterSet& iConfig):
   tree_->Branch("detId/i", &detId_); 
   tree_->Branch("noise/F", &noise_); 
   tree_->Branch("istrip/i", &istrip_);
-  tree_->Branch("APVgain/F", &APVgain_); 
+  tree_->Branch("gsim/F", &gsim_); 
+  tree_->Branch("g1/F", &g1_); 
+  tree_->Branch("g2/F", &g2_); 
   tree_->Branch("layer/i", &layer_); 
   tree_->Branch("ring/i", &ring_); 
   tree_->Branch("length/F", &lenght_); 
@@ -177,8 +179,15 @@ DB2Tree::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup)
   edm::ESHandle<SiStripNoises> noiseHandle;
   iSetup.get<SiStripNoisesRcd>().get(noiseHandle);
 
-  edm::ESHandle<SiStripApvGain> gainHandle;
-  iSetup.get<SiStripApvGainSimRcd>().get(gainHandle);
+  edm::ESHandle<SiStripApvGain> g1Handle;
+  iSetup.get<SiStripApvGainRcd>().get(g1Handle);
+  //std::cout <<std::endl << std::endl << "g1: " << iSetup.get<SiStripApvGainRcd>().key().type().name() << std::endl << std::endl;
+  
+  edm::ESHandle<SiStripApvGain> g2Handle;
+  iSetup.get<SiStripApvGain2Rcd>().get(g2Handle);
+  
+  edm::ESHandle<SiStripApvGain> gsimHandle;
+  iSetup.get<SiStripApvGainSimRcd>().get(gsimHandle);
   
   std::vector<uint32_t> activeDetIds;
   noiseHandle->getDetIds(activeDetIds);
@@ -193,13 +202,17 @@ DB2Tree::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup)
     }
 
     SiStripNoises::Range noiseRange = noiseHandle->getRange(detid);
-    SiStripApvGain::Range gainRange = gainHandle->getRange(detid);
+    SiStripApvGain::Range gsimRange = gsimHandle->getRange(detid);
+    SiStripApvGain::Range g1Range = g1Handle->getRange(detid);
+    SiStripApvGain::Range g2Range = g2Handle->getRange(detid);
     unsigned int nStrip = reader_.getNumberOfApvsAndStripLength(detid).first*128;
     lenght_ = reader_.getNumberOfApvsAndStripLength(detid).second;
     detId_=detid;
     
     for(istrip_=0; istrip_<nStrip; ++istrip_){
-      APVgain_ = gainHandle->getStripGain(istrip_, gainRange) ? gainHandle->getStripGain(istrip_, gainRange) : 1.;
+      gsim_ = gsimHandle->getStripGain(istrip_, gsimRange) ? gsimHandle->getStripGain(istrip_, gsimRange) : 1.;
+      g1_ = g1Handle->getStripGain(istrip_, g1Range) ? g1Handle->getStripGain(istrip_, g1Range) : 1.;
+      g2_ = g2Handle->getStripGain(istrip_, g2Range) ? g2Handle->getStripGain(istrip_, g2Range) : 1.;
       noise_ = noiseHandle->getNoise(istrip_, noiseRange);
       tree_->Fill();
     }
