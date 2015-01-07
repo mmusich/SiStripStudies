@@ -1,6 +1,7 @@
 import FWCore.ParameterSet.Config as cms
-
+from fnmatch import fnmatch
 import FWCore.ParameterSet.VarParsing as VarParsing
+from pdb import set_trace
 
 process = cms.Process("Reader")
 
@@ -11,26 +12,11 @@ options.register ('outputRootFile',
                   VarParsing.VarParsing.multiplicity.singleton, # singleton or list
                   VarParsing.VarParsing.varType.string,          # string, int, or float
                   "output root file")
-options.register ('connectionString',
-                  "",
-                  VarParsing.VarParsing.multiplicity.singleton, # singleton or list
+options.register ('records',
+                  [],
+                  VarParsing.VarParsing.multiplicity.list, # singleton or list
                   VarParsing.VarParsing.varType.string,          # string, int, or float
-                  "connection string")
-options.register ('recordName',
-                  "",
-                  VarParsing.VarParsing.multiplicity.singleton, # singleton or list
-                  VarParsing.VarParsing.varType.string,          # string, int, or float
-                  "record name")
-options.register ('recordForQualityName',
-                  "SiStripDetCablingRcd",
-                  VarParsing.VarParsing.multiplicity.singleton, # singleton or list
-                  VarParsing.VarParsing.varType.string,          # string, int, or float
-                  "record name")
-options.register ('tagName',
-                  "",
-                  VarParsing.VarParsing.multiplicity.singleton, # singleton or list
-                  VarParsing.VarParsing.varType.string,          # string, int, or float
-                  "tag name")
+                  "record:tag names to be used/changed from GT")
 options.register ('runNumber',
                   0,
                   VarParsing.VarParsing.multiplicity.singleton, # singleton or list
@@ -63,12 +49,34 @@ process.source = cms.Source("EmptyIOVSource",
     interval = cms.uint64(1)
 )
 
-
+connection_map = [
+    ('SiStrip*', 'frontier://FrontierProd/CMS_COND_31X_STRIP'), #one for everything in strips
+]
+connection_map.sort(key=lambda x: -1*len(x[0]))
+def best_match(rcd):
+    print rcd
+    for pattern, string in connection_map:
+        print pattern, fnmatch(rcd, pattern)
+        if fnmatch(rcd, pattern):
+            return string
+records = []
+if options.records:
+    for record in options.records:
+        rcd, tag = tuple(record.split(':'))
+        records.append(
+            cms.PSet(
+                record = cms.string(rcd),
+                tag    = cms.string(tag),
+                connect = cms.untracked.string(best_match(rcd))
+                )
+            )
 
 if options.GlobalTag:
     print "using global tag: %s" %options.GlobalTag
     process.load('Configuration.StandardSequences.FrontierConditions_GlobalTag_cff')
     process.GlobalTag.globaltag = '%s::All' % options.GlobalTag
+    process.GlobalTag.DumpStat = cms.untracked.bool(True)
+    process.GlobalTag.toGet = cms.VPSet(*records)
 else:
     process.poolDBESSource = cms.ESSource(
         "PoolDBESSource",
@@ -78,11 +86,7 @@ else:
             authenticationPath = cms.untracked.string('/afs/cern.ch/cms/DB/conddb')
             ),
         timetype = cms.untracked.string('runnumber'),
-        connect = cms.string(options.connectionString),
-        toGet = cms.VPSet(cms.PSet(
-                record = cms.string(options.recordName),
-                tag = cms.string(options.tagName)
-                ))
+        toGet = cms.VPSet(records)
         )
 
 process.TFileService = cms.Service(
