@@ -44,6 +44,7 @@ typedef EntryMap::iterator EntryMapIT;
 void loadGraph(EntryMap &input_map, TGraphErrors* graph){
   int ipoint = 0;
   for(EntryMapIT it = input_map.begin(); it != input_map.end(); ++it){
+    //cout << ipoint << " " << it->first << " " << it->second.mean() << endl;
     graph->SetPoint(ipoint, it->first, it->second.mean());
     graph->SetPointError(ipoint, 0., it->second.std_dev());
     ipoint++;
@@ -58,18 +59,20 @@ void makeGraphs(TFile* file, string dirname, EntryMap *input_map){
   for(int i=0; i<4; i++){
     TGraphErrors *graph = new TGraphErrors();
     graph->SetName(regions[i].c_str());
+    //cout << regions[i] << endl;
     loadGraph(input_map[i], graph);
     graph->Write();
   }
 }
 
-void analyze_noise(string input_file, string output_file){
+void analyze_noise(string input_file, string output_file, bool gsim_, bool g1_, bool gratio_){
   //region, strip length, Entries
   EntryMap map_gsim[4];
   EntryMap map_g1[4];
   EntryMap map_gratio[4];
 
-  unsigned long int detId, layer, ring, istrip; 
+  unsigned long int detId, ring, istrip; 
+  Int_t layer;
   float noise, gsim, g1, g2, lenght; 
   bool isTIB, isTOB, isTEC, isTID;
   
@@ -83,7 +86,7 @@ void analyze_noise(string input_file, string output_file){
   tree->SetBranchAddress("gsim/F", &gsim); 
   tree->SetBranchAddress("g1/F", &g1); 
   tree->SetBranchAddress("g2/F", &g2); 
-  //tree->SetBranchAddress("layer/i", &layer); 
+  tree->SetBranchAddress("layer/I", &layer); 
   //tree->SetBranchAddress("ring/i", &ring); 
   tree->SetBranchAddress("length/F", &lenght); 
   tree->SetBranchAddress("isTIB/O", &isTIB); 
@@ -92,7 +95,7 @@ void analyze_noise(string input_file, string output_file){
   tree->SetBranchAddress("isTID/O", &isTID); 
 
   unsigned long int entries = tree->GetEntries();
-  int cent = entries / 100;
+  int cent = entries / 10;
   for(unsigned long int ientry=0; ientry < entries; ientry++){
     tree->GetEntry(ientry);
     if(ientry % cent == 0){ 
@@ -105,16 +108,25 @@ void analyze_noise(string input_file, string output_file){
     else if(isTEC){idx=3;}
     else if(isTID){idx=1;}
 
-    EntryMapIT found = map_gsim[idx].find(lenght);
-    if(found == map_gsim[idx].end()) {
-      map_gsim[idx].insert(make_pair<double, Entry>(lenght, Entry()));
-      map_g1[idx].insert(make_pair<double, Entry>(lenght, Entry()));
-      map_gratio[idx].insert(make_pair<double, Entry>(lenght, Entry()));
+    EntryMapIT found;
+    if(gsim_){
+      found = map_gsim[idx].find(lenght);
+      if(found == map_gsim[idx].end())
+	map_gsim[idx].insert(make_pair<double, Entry>(lenght, Entry()));
+      map_gsim  [idx][lenght].add(noise/gsim);
     }
-    
-    map_gsim  [idx][lenght].add(noise/gsim);
-    map_g1    [idx][lenght].add(noise/g1);
-    map_gratio[idx][lenght].add((g1*g2/gsim) -1);
+    if(g1_){
+      found = map_g1[idx].find(lenght);
+      if(found == map_g1[idx].end())
+	map_g1[idx].insert(make_pair<double, Entry>(lenght, Entry()));
+      map_g1    [idx][lenght].add(noise/g1);
+    }
+    if(gratio_){
+      found = map_gratio[idx].find(layer);
+      if(found == map_gsim[idx].end())
+	map_gratio[idx].insert(make_pair<double, Entry>(layer, Entry()));
+      map_gratio[idx][layer].add((g1*g2/gsim) -1);
+    }
   }
   TText* info = (TText*) infile->Get("DBTags");
   //TText* clone_info = (TText*) info->Clone("DBTags");
@@ -122,9 +134,9 @@ void analyze_noise(string input_file, string output_file){
   infile->Close();
 
   TFile *outfile = TFile::Open(output_file.c_str(),"RECREATE");
-  makeGraphs(outfile, "GSim"  , map_gsim  );
-  makeGraphs(outfile, "G1"    , map_g1    );
-  makeGraphs(outfile, "GRatio", map_gratio);
+  if(gsim_) makeGraphs(outfile, "GSim"  , map_gsim  );
+  if(g1_) makeGraphs(outfile, "G1"    , map_g1    );
+  if(gratio_) makeGraphs(outfile, "GRatio", map_gratio);
 
   outfile->Close();
 
