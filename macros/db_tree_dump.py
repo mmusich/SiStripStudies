@@ -18,7 +18,7 @@ options.register ('records',
                   VarParsing.VarParsing.varType.string,          # string, int, or float
                   "record:tag names to be used/changed from GT")
 options.register ('runNumber',
-                  0,
+                  1,
                   VarParsing.VarParsing.multiplicity.singleton, # singleton or list
                   VarParsing.VarParsing.varType.int,          # string, int, or float
                   "run number")
@@ -85,8 +85,10 @@ else:
             messageLevel = cms.untracked.int32(1),  # it used to be 2
             authenticationPath = cms.untracked.string('/afs/cern.ch/cms/DB/conddb')
             ),
+        DumpStat = cms.untracked.bool(True),
         timetype = cms.untracked.string('runnumber'),
-        toGet = cms.VPSet(records)
+        toGet = cms.VPSet(records),
+        connect = cms.string('frontier://FrontierProd/CMS_COND_31X_STRIP')
         )
 
 process.TFileService = cms.Service(
