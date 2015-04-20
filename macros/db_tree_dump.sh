@@ -9,6 +9,7 @@ for opt in $@
 do
 		echo $opt | awk -F= '{print "\""$1"\" : \""$2"\","}' >> opts.txt
 done
+echo "\"cmd\" : \"db_tree_dump.sh $@\"," >> opts.txt
 echo "}" >> opts.txt
 
 outputRootFile=`for i; do echo $i; shift; done| grep outputRootFile | awk -F= '{print $2}'`
