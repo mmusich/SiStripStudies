@@ -7,6 +7,7 @@ from pdb import set_trace
 import subprocess
 import logging
 import copy
+import re
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 
 parser = OptionParser(description='process a CondDBMonitor output root file')
@@ -114,6 +115,28 @@ def plot_dir(tfile, dirname, pngname, titletxt='',
    c.SaveAs(
       os.path.join(output_dir, pngname)
       )
+
+   tdir = tfile.Get(dirname)
+   keys = [i for i in tdir.GetListOfKeys()]
+   regex= re.compile('G.+_T[A-Z]+_\d+\.?\d+')
+   for key in keys:
+      if not regex.match(key.GetName()):
+         continue
+      hist = key.ReadObj()
+      hist.Draw('hist')
+      title = ROOT.TPaveText(.2,1-0.04*(len(lines)+1),.999,.999, "brNDC")
+      title.SetFillColor(0)
+      title.SetBorderSize(1)
+      title.SetMargin(0.)
+      title.AddText(key.GetName().replace('_',' '))
+      for line in lines:
+         title.AddText(line)
+      title.Draw('same')
+      c.Update()
+      c.SaveAs(
+         os.path.join(output_dir, '%s.png' % key.GetName())
+         )
+
 
 plot_file = ROOT.TFile.Open(output_tfile, "update")
 plots = {}

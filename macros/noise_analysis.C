@@ -7,6 +7,9 @@
 #include "TFile.h"
 #include "TText.h"
 #include "TGraphErrors.h"
+#include "TH1F.h"
+#include "TUUID.h"
+#include <sstream>
 
 using namespace std;
 
@@ -34,6 +37,9 @@ private:
 
 typedef map<double, Entry> EntryMap;
 typedef EntryMap::iterator EntryMapIT;
+
+typedef map<double, TH1F>  HMap;
+typedef HMap::iterator HMapIT;
 
 /*void initMap(map<int, map<double, Entry> > &toinit){
   map<double, Entry> dummy;
@@ -67,9 +73,14 @@ void makeGraphs(TFile* file, string dirname, EntryMap *input_map){
 
 void analyze_noise(string input_file, string output_file, bool gsim_, bool g1_, bool gratio_){
   //region, strip length, Entries
+  string regions[4] = {"TIB", "TID", "TOB", "TEC"};
   EntryMap map_gsim[4];
   EntryMap map_g1[4];
   EntryMap map_gratio[4];
+
+  HMap hmap_gsim[4];
+  HMap hmap_g1[4];
+  HMap hmap_gratio[4];
 
   unsigned long int detId, ring, istrip; 
   Int_t layer;
@@ -96,6 +107,7 @@ void analyze_noise(string input_file, string output_file, bool gsim_, bool g1_, 
 
   unsigned long int entries = tree->GetEntries();
   int cent = entries / 10;
+	TH1::AddDirectory(kFALSE);
   for(unsigned long int ientry=0; ientry < entries; ientry++){
     tree->GetEntry(ientry);
     if(ientry % cent == 0){ 
@@ -111,33 +123,94 @@ void analyze_noise(string input_file, string output_file, bool gsim_, bool g1_, 
     EntryMapIT found;
     if(gsim_){
       found = map_gsim[idx].find(lenght);
-      if(found == map_gsim[idx].end())
-	map_gsim[idx].insert(make_pair<double, Entry>(lenght, Entry()));
+      if(found == map_gsim[idx].end()){
+				map_gsim[idx].insert(make_pair<double, Entry>(lenght, Entry()));
+				stringstream ss;
+				ss << "GSim_" << regions[idx] << "_" << lenght;
+				hmap_gsim[idx].insert(
+					make_pair(
+						lenght, 
+						TH1F(ss.str().c_str(),"",100, 1, 10)
+						)
+					);
+			}
       map_gsim  [idx][lenght].add(noise/gsim);
+      hmap_gsim [idx][lenght].Fill(noise/gsim);
     }
     if(g1_){
       found = map_g1[idx].find(lenght);
-      if(found == map_g1[idx].end())
-	map_g1[idx].insert(make_pair<double, Entry>(lenght, Entry()));
+      if(found == map_g1[idx].end()){
+				map_g1[idx].insert(make_pair<double, Entry>(lenght, Entry()));
+				stringstream ss;
+				ss << "G1_" << regions[idx] << "_" << lenght;
+				hmap_g1[idx].insert(
+					make_pair(
+						lenght, 
+						TH1F(ss.str().c_str(),"",100, 1, 10)
+						)
+					);
+				cout << "booked " << hmap_g1[idx][lenght].GetName() << " from " << ss.str() << endl;
+			}
       map_g1    [idx][lenght].add(noise/g1);
+      hmap_g1   [idx][lenght].Fill(noise/g1);
     }
     if(gratio_){
       found = map_gratio[idx].find(layer);
-      if(found == map_gsim[idx].end())
-	map_gratio[idx].insert(make_pair<double, Entry>(layer, Entry()));
+      if(found == map_gsim[idx].end()){
+				map_gratio[idx].insert(make_pair<double, Entry>(layer, Entry()));
+				stringstream ss;
+				ss << "GRatio_" << regions[idx] << "_" << lenght;
+				hmap_gratio[idx].insert(
+					make_pair(
+						lenght, 
+						TH1F(ss.str().c_str(),"",100, -0.5, 0.5)
+						)
+					);
+			}
       map_gratio[idx][layer].add((g1*g2/gsim) -1);
+      hmap_gratio[idx][layer].Fill((g1*g2/gsim) -1);
     }
   }
+	cout << "loop done" << endl;
   TText* info = (TText*) infile->Get("DBTags");
+	cout << "Got DB Info" << endl;
   //TText* clone_info = (TText*) info->Clone("DBTags");
   //clone_info->
-  infile->Close();
 
+	cout << "Opening output: " << output_file << endl;
   TFile *outfile = TFile::Open(output_file.c_str(),"RECREATE");
-  if(gsim_) makeGraphs(outfile, "GSim"  , map_gsim  );
-  if(g1_) makeGraphs(outfile, "G1"    , map_g1    );
-  if(gratio_) makeGraphs(outfile, "GRatio", map_gratio);
+  if(gsim_) {   
+		cout << "Saving GSim" << endl;
+		makeGraphs(outfile, "GSim"  , map_gsim  );	
+		for(int i=0; i<4; i++){
+			for(HMapIT it = hmap_gsim[i].begin(); it != hmap_gsim[i].end(); ++it){
+				cout << "saving " << it->second.GetName() << endl;
+				it->second.Write();
+			}			
+		}
 
+	}
+	if(g1_) {    
+		cout << "Saving G1" << endl;
+		makeGraphs(outfile, "G1"    , map_g1    );
+		for(int i=0; i<4; i++){
+			for(HMapIT it = hmap_g1[i].begin(); it != hmap_g1[i].end(); ++it){
+				cout << "saving " << it->second.GetName() << endl;
+				it->second.Write();
+			}			
+		}
+	}
+	if(gratio_) {
+		cout << "Saving GRatio" << endl;
+		makeGraphs(outfile, "GRatio", map_gratio);
+		for(int i=0; i<4; i++){
+			for(HMapIT it = hmap_gratio[i].begin(); it != hmap_gratio[i].end(); ++it){
+				cout << "saving " << it->second.GetName() << endl;
+				it->second.Write();
+			}			
+		}
+	}
+  outfile->Write();
   outfile->Close();
-
+  infile->Close();
 }
