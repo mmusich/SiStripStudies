@@ -17,6 +17,11 @@ options.register ('records',
                   VarParsing.VarParsing.multiplicity.list, # singleton or list
                   VarParsing.VarParsing.varType.string,          # string, int, or float
                   "record:tag names to be used/changed from GT")
+options.register ('external',
+                  [],
+                  VarParsing.VarParsing.multiplicity.list, # singleton or list
+                  VarParsing.VarParsing.varType.string,          # string, int, or float
+                  "record:fle.db picks the following record from this external file")
 options.register ('runNumber',
                   1,
                   VarParsing.VarParsing.multiplicity.singleton, # singleton or list
@@ -52,6 +57,11 @@ process.source = cms.Source("EmptyIOVSource",
 connection_map = [
     ('SiStrip*', 'frontier://FrontierProd/CMS_COND_31X_STRIP'), #one for everything in strips
 ]
+if options.external:
+    connection_map.extend(
+        (i.split(':')[0], 'sqlite_file:%s' % i.split(':')[1]) for i in options.external
+        )
+
 connection_map.sort(key=lambda x: -1*len(x[0]))
 def best_match(rcd):
     print rcd
