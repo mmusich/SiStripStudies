@@ -8,14 +8,22 @@ import subprocess
 import logging
 import copy
 import re
+import shutil
+import glob
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 
 parser = OptionParser(description='process a CondDBMonitor output root file')
 parser.add_option('--plotOnly', action='store_true', default=False, help='runs only the plotting')
 parser.add_option('--gsim', action='store_true', default=False, help='plots gsim')
 parser.add_option('--g1', action='store_true', default=False, help='')
+parser.add_option('--gain', action='store_true', default=False, help='')
 parser.add_option('--gratio', action='store_true', default=False, help='')
+parser.add_option('--maps', action='store_true', default=False, help='')
 parser.add_option('--yrange', default='', type=str, help='')
+parser.add_option('--mode', default='strip', type=str, help='compute the mean and distribution'
+                  ' based on strip, apv, module values')
+parser.add_option('--mask', default='', type=str, help='mask bad APVs')
+
 #parser.add_argument('pngname', type=str)
 opts, args = parser.parse_args()
 tfilename  = args[0]
@@ -26,6 +34,7 @@ import math
 ROOT.gROOT.SetStyle('Plain')
 ROOT.gROOT.SetBatch()
 ROOT.gStyle.SetOptStat(0)
+ROOT.gStyle.SetPalette(53)
 
 if not os.path.isfile(tfilename):
    raise ValueError('%s is not a valid file' % args.tfilename)
@@ -37,14 +46,57 @@ output_tfile=os.path.join(output_dir,'analyzed.root')
 
 tfile = ROOT.TFile.Open(tfilename)
 tags_str = tfile.Get('DBTags').GetTitle()
+with open(os.path.join(output_dir, 'DBTags.json'), 'w') as out:
+   out.write(tags_str)
 tags = eval(tags_str)
+with open(os.path.join(output_dir, 'DBTags.raw_txt'), 'w') as out:
+   format = '%30s | %s\n'
+   out.write(format % ('record', 'tag'))
+   out.write('-'*60+'\n')
+   for i in tags.iteritems():
+      out.write(format % i)
+
+ropts_str = tfile.Get('Opts').GetTitle()
+with open(os.path.join(output_dir, 'Opts.json'), 'w') as out:
+   out.write(ropts_str)
+ropts = eval(ropts_str)
+with open(os.path.join(output_dir, 'Opts.raw_txt'), 'w') as out:
+   format = '%30s | %s\n'
+   out.write(format % ('option', 'value'))
+   out.write('-'*60+'\n')
+   for i in ropts.iteritems():
+      out.write(format % i)
+
 tfile.Close()
 
 if not opts.plotOnly:
    ROOT.gROOT.ProcessLine('.L %s/src/SiStripStudies/macros/noise_analysis.C+' % os.environ['CMSSW_BASE'])
-   ROOT.analyze_noise(tfilename, output_tfile, opts.gsim, opts.g1, opts.gratio)
+   opmode = None
+   mask = ROOT.Mask()
+   if opts.mask:
+      with open(opts.mask) as maskfile:
+         maskre = re.compile('\d+')
+         for line in maskfile:
+            if maskre.match(line):
+               info = line.split()
+               mask.add(int(info[0]), int(info[1]))
+   if opts.mode.lower() == 'strip':
+      opmode = ROOT.OpMode.STRIP_BASED
+   elif opts.mode.lower() == 'apv':
+      opmode = ROOT.OpMode.APV_BASED
+   elif opts.mode.lower() == 'module':
+      opmode = ROOT.OpMode.MODULE_BASED
+   else:
+      raise ValueError('allowed operation modes: strip, apv, module')
+   ROOT.analyze_noise(tfilename, output_tfile, opts.gsim, opts.g1, opts.gratio, opts.gain, mask, opmode)
+   for detlist in glob.glob('*.detlist'):
+      base = os.path.basename(detlist)
+      shutil.move(detlist, os.path.join(output_dir, base))
 
 logging.info('done')
+if opts.maps:
+   for dlist in glob.glob(os.path.join(output_dir, '*.detlist')):
+      os.system('print_TrackerMap %s "" %s' % (dlist, dlist.replace('.detlist', '.png')))
 
 drawattrs = [
    ('TID' , {
@@ -65,9 +117,18 @@ drawattrs = [
       }), 
 ]
 
+def make_title(lines, xmin, ymin, xmax, ymax):
+   title = ROOT.TPaveText(xmin,ymin,xmax,ymax, "brNDC")
+   title.SetFillColor(0)
+   title.SetBorderSize(1)
+   title.SetMargin(0.)
+   for line in lines:
+      title.AddText(line)
+   return title
+
 def plot_dir(tfile, dirname, pngname, titletxt='', 
              yrange=(2, 8), xtitle='', ytitle='',
-             xrange=(7, 21)):
+             xrange=(7, 21), showstat=True):
    c = ROOT.TCanvas()
    c.SetGridx()
    c.SetGridy()
@@ -77,6 +138,7 @@ def plot_dir(tfile, dirname, pngname, titletxt='',
    i_am_legend = ROOT.TLegend(0.52,0.1,0.9,0.3)
    i_am_legend.SetFillColor(0)
    first = True
+   graph_map = {}
    for region, attrs in drawattrs:
       graph = tfile.Get(
          os.path.join(
@@ -84,6 +146,12 @@ def plot_dir(tfile, dirname, pngname, titletxt='',
             region
             )
          )
+      graph_map[region] = dict([
+            (round(graph.GetX()[i],4),
+             (graph.GetY()[i], graph.GetEY()[i]))
+             for i in range(graph.GetN())
+            ])
+
       for attr, val in attrs.iteritems():
          getattr(graph, 'Set%s' % attr)(val)
       draw_opt = 'AP' if first else 'P same'
@@ -101,13 +169,7 @@ def plot_dir(tfile, dirname, pngname, titletxt='',
    c.Update()
    c.cd()
    lines = titletxt.split('\n')
-   title = ROOT.TPaveText(.001,1-0.04*len(lines),.8,.999, "brNDC")
-   title.SetFillColor(0)
-   title.SetBorderSize(1)
-   title.SetMargin(0.)
-   logging.debug('%s %s', pngname, titletxt)
-   for line in lines:
-      title.AddText(line)
+   title = make_title(lines, .001,1-0.04*len(lines),.8,.999)
    title.Draw('same')
    c.Update()
 
@@ -119,24 +181,64 @@ def plot_dir(tfile, dirname, pngname, titletxt='',
    tdir = tfile.Get(dirname)
    keys = [i for i in tdir.GetListOfKeys()]
    regex= re.compile('G.+_T[A-Z]+_\d+\.?\d+')
+   c.SetLogy(True)
    for key in keys:
       if not regex.match(key.GetName()):
          continue
+      subdet = key.GetName().split('_')[1]
+      length = float(key.GetName().split('_')[2])
       hist = key.ReadObj()
+      hist.GetXaxis().SetTitle(ytitle)
+      hist.GetYaxis().SetTitle('counts')
       hist.Draw('hist')
-      title = ROOT.TPaveText(.2,1-0.04*(len(lines)+1),.999,.999, "brNDC")
-      title.SetFillColor(0)
-      title.SetBorderSize(1)
-      title.SetMargin(0.)
-      title.AddText(key.GetName().replace('_',' '))
-      for line in lines:
-         title.AddText(line)
+      y_min = 1-0.04*(len(lines)+1)
+      new_lines = [key.GetName().replace('_',' ')]+lines
+      title = make_title(new_lines, .2,y_min,.999,.999)
       title.Draw('same')
+
+      stats = ROOT.TPaveText(.6,y_min-0.04*5,.999,y_min-0.04, "brNDC")
+      stats.SetFillColor(0)
+      stats.SetBorderSize(1)
+      stats.SetMargin(0.)
+      stats.AddText('mean: %.2f, from hist: %.2f' % (graph_map[subdet][length][0], hist.GetMean()))
+      stats.AddText('RMS : %.2f, from hist: %.2f' % (graph_map[subdet][length][1], hist.GetRMS() ))
+      stats.AddText('overflow: %.0f' % (hist.GetBinContent(hist.GetNbinsX()+1)))
+      if showstat:
+         stats.Draw('same')
+
       c.Update()
       c.SaveAs(
          os.path.join(output_dir, '%s.png' % key.GetName())
          )
-
+   c.SetLogy(False)
+   if dirname == 'Gain':
+      regex= re.compile('[A-Z0-9]+_noise_vs_gain')
+      hsum = None
+      for key in keys:
+         if not regex.match(key.GetName()):
+            continue
+         subdet = key.GetName().split('_')[0]
+         hist = key.ReadObj()
+         hist.SetFillColor(ROOT.kBlue)
+         hist.SetLineColor(ROOT.kBlue)
+         hist.SetMaximum(1)
+         hist.Draw('box')
+         hist.GetXaxis().SetTitle('gain')
+         hist.GetYaxis().SetTitle('noise')
+         if not hsum:
+            hsum = hist.Clone('noise_vs_gain')
+         else:
+            hsum.Add(hist)
+         c.Update()
+         c.SaveAs(
+            os.path.join(output_dir, '%s.png' % key.GetName())
+            )
+      hsum.SetMaximum(1)
+      hsum.Draw('box')
+      c.Update()
+      c.SaveAs(
+         os.path.join(output_dir, '%s.png' % hsum.GetName())
+         )
 
 plot_file = ROOT.TFile.Open(output_tfile, "update")
 plots = {}
@@ -165,6 +267,15 @@ if opts.gratio:
       'ytitle' :'(G1*G2)/GSim',
       'yrange' : (-0.5, 0.5),
       'xrange' : (-10, 10),
+      }
+if opts.gain:
+   plots["Gain"] = {
+      'titletxt' : 'APV Gain vs. stip length\nAPVGain: %s' % (tags['SiStripApvGainRcd']),
+      'xtitle' : 'Layer',
+      'ytitle' :'G1',
+      'yrange' : (-0.5, 0.5),
+      'xrange' : (-10, 10),
+      'showstat': False,
       }
 
 for dirname, kwargs in plots.iteritems():
