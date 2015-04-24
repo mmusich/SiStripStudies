@@ -12,10 +12,8 @@ logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 
 
 parser = OptionParser(description='process a CondDBMonitor output root file')
-## parser.add_option('--plotOnly', action='store_true', default=False, help='runs only the plotting')
-## parser.add_option('--gsim', action='store_true', default=False, help='plots gsim')
-## parser.add_option('--g1', action='store_true', default=False, help='')
-## parser.add_option('--gratio', action='store_true', default=False, help='')
+parser.add_option('--xtitle', default='length (cm)', type=str, help='')
+parser.add_option('--ytitle', default='noise (ADC counts)', type=str, help='')
 parser.add_option('--yrange', default='(2,8)', type=str, help='')
 ## #parser.add_argument('pngname', type=str)
 ## opts, args = parser.parse_args()
@@ -55,6 +53,8 @@ def draw(tdir, name, marker, color, first, first_loop):
    if first_loop:
       i_am_legend.AddEntry(g, name, "p")
    g.Draw(attr)
+   g.GetXaxis().SetTitle(opts.xtitle)
+   g.GetYaxis().SetTitle(opts.ytitle)
    keep.append(g)
 
 for info, color, idx in zip(tfilenames, [2,4,1,3], xrange(10000)):
@@ -90,4 +90,5 @@ for info, color, idx in zip(tfilenames, [2,4,1,3], xrange(10000)):
    
    
 i_am_legend.Draw()
+c.Update()
 c.SaveAs(output_pic)
