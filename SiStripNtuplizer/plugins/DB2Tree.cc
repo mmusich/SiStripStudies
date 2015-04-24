@@ -27,6 +27,8 @@
 #include "CondFormats/DataRecord/interface/SiStripNoisesRcd.h"
 #include "CondFormats/SiStripObjects/interface/SiStripApvGain.h"
 #include "CondFormats/DataRecord/interface/SiStripApvGainRcd.h"
+#include "CondFormats/SiStripObjects/interface/SiStripLatency.h"
+#include "CondFormats/DataRecord/interface/SiStripCondDataRecords.h"
 
 #include "FWCore/Framework/interface/Event.h"
 #include "FWCore/Framework/interface/MakerMacros.h"
@@ -50,6 +52,7 @@
 #include <unordered_map>
 #include <map>
 #include <string>
+#include "TText.h"
 
 class DB2Tree : public edm::EDAnalyzer {
 public:
@@ -75,10 +78,11 @@ private:
 
 
   //branches
-  uint32_t detId_, ring_, istrip_; 
+  uint32_t detId_, ring_, istrip_, det_type_; 
   Int_t layer_;
   float noise_, gsim_, g1_, g2_, lenght_; 
   bool isTIB_, isTOB_, isTEC_, isTID_; 
+	TText *text_;
 };
 
 //
@@ -94,16 +98,19 @@ private:
 //
 DB2Tree::DB2Tree(const edm::ParameterSet& iConfig):
   reader_(edm::FileInPath(std::string("CalibTracker/SiStripCommon/data/SiStripDetInfo.dat") ).fullPath()),
-  detId_(0), ring_(0), istrip_(0), layer_(0), 
+  detId_(0), ring_(0), istrip_(0), det_type_(0), layer_(0), 
   noise_(0), gsim_(0), g1_(0), g2_(0), lenght_(0),
   isTIB_(0), isTOB_(0), isTEC_(0), isTID_(0)
 {
   edm::Service<TFileService> fs;
    //now do what ever initialization is needed
+	text_ = fs->make<TText>(0., 0., "");
+	text_->SetName("RunMode");
   tree_ = fs->make<TTree>( "StripDBTree"  , "Tree with DB SiStrip info");
 
   //book branches (I know, hand-made, I hate it)
   tree_->Branch("detId/i", &detId_); 
+	tree_->Branch("detType/i", &det_type_);
   tree_->Branch("noise/F", &noise_); 
   tree_->Branch("istrip/i", &istrip_);
   tree_->Branch("gsim/F", &gsim_); 
@@ -178,10 +185,14 @@ void
 DB2Tree::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup)
 {
   edm::ESHandle<SiStripNoises> noiseHandle;
-  iSetup.get<SiStripNoisesRcd>().get(noiseHandle);
+	// const SiStripNoisesRcd *noise_rcd = iSetup.tryToGet<SiStripNoisesRcd*>();
+	// if(noise_rcd)	noise_rcd->get(noiseHandle);
+	iSetup.get<SiStripNoisesRcd>().get(noiseHandle);
 
   edm::ESHandle<SiStripApvGain> g1Handle;
-  iSetup.get<SiStripApvGainRcd>().get(g1Handle);
+	// const SiStripApvGainRcd *g1_rcd = iSetup.tryToGet<SiStripApvGainRcd*>();
+  // if(noise_rcd) g1_rcd->get(g1Handle);
+	iSetup.get<SiStripApvGainRcd>().get(g1Handle);
   //std::cout <<std::endl << std::endl << "g1: " << iSetup.get<SiStripApvGainRcd>().key().type().name() << std::endl << std::endl;
   
   edm::ESHandle<SiStripApvGain> g2Handle;
@@ -190,9 +201,13 @@ DB2Tree::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup)
   edm::ESHandle<SiStripApvGain> gsimHandle;
   iSetup.get<SiStripApvGainSimRcd>().get(gsimHandle);
   
+	bool first = true;
+	edm::ESHandle<SiStripLatency> latencyHandle;
+  iSetup.get<SiStripLatencyRcd>().get(latencyHandle);
+	
   std::vector<uint32_t> activeDetIds;
   noiseHandle->getDetIds(activeDetIds);
-  
+
   //int prev_subdetId = -1;
   for(uint32_t detid : activeDetIds){
       //std::vector<uint32_t>::const_iterator it = activeDetIds.cbegin(); it != activeDetIds.cend(); ++it){
@@ -209,8 +224,14 @@ DB2Tree::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup)
     unsigned int nStrip = reader_.getNumberOfApvsAndStripLength(detid).first*128;
     lenght_ = reader_.getNumberOfApvsAndStripLength(detid).second;
     detId_=detid;
-    
+    det_type_ = SiStripDetId(detid).moduleGeometry();
     for(istrip_=0; istrip_<nStrip; ++istrip_){
+			if(first){
+				first = false;
+				std::string run_op = ((latencyHandle->latency(detid, 1) & 8) == 8) ? "PEAK" : "DECO" ;
+				text_->SetText(0., 0., run_op.c_str());
+				std::cout << "SiStripOperationModeRcd " << ". . . " << run_op << std::endl;
+			}
       gsim_ = gsimHandle->getStripGain(istrip_, gsimRange) ? gsimHandle->getStripGain(istrip_, gsimRange) : 1.;
       g1_ = g1Handle->getStripGain(istrip_, g1Range) ? g1Handle->getStripGain(istrip_, g1Range) : 1.;
       g2_ = g2Handle->getStripGain(istrip_, g2Range) ? g2Handle->getStripGain(istrip_, g2Range) : 1.;
