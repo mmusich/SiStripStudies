@@ -55,7 +55,9 @@ process.source = cms.Source("EmptyIOVSource",
 )
 
 connection_map = [
-    ('SiStrip*', 'frontier://FrontierProd/CMS_COND_31X_STRIP'), #one for everything in strips
+    # OLD DB version
+    #('SiStrip*', 'frontier://FrontierProd/CMS_COND_31X_STRIP'), #one for everything in strips
+    ('SiStrip*', 'frontier://PromptProd/CMS_CONDITIONS'),
 ]
 if options.external:
     connection_map.extend(
