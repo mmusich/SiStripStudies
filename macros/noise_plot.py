@@ -1,4 +1,4 @@
-#! /usr/bin/evn python
+#! /usr/bin/env python
 
 import os
 import sys
@@ -181,12 +181,19 @@ def plot_dir(tfile, dirname, pngname, titletxt='',
    tdir = tfile.Get(dirname)
    keys = [i for i in tdir.GetListOfKeys()]
    regex= re.compile('G.+_T[A-Z]+_\d+\.?\d+')
+   type_regex= re.compile('G.+_[A-Z0-9]+')
    c.SetLogy(True)
    for key in keys:
-      if not regex.match(key.GetName()):
+      lenght_based = bool(regex.match(key.GetName()))
+      type_based   = bool(type_regex.match(key.GetName()))
+      print key.GetName(), lenght_based, type_based
+      if not type_based:
          continue
-      subdet = key.GetName().split('_')[1]
-      length = float(key.GetName().split('_')[2])
+      subdet = None
+      length = None
+      if lenght_based:
+         subdet = key.GetName().split('_')[1]
+         length = float(key.GetName().split('_')[2])
       hist = key.ReadObj()
       hist.GetXaxis().SetTitle(ytitle)
       hist.GetYaxis().SetTitle('counts')
@@ -197,13 +204,13 @@ def plot_dir(tfile, dirname, pngname, titletxt='',
       title.Draw('same')
 
       stats = ROOT.TPaveText(.6,y_min-0.04*5,.999,y_min-0.04, "brNDC")
-      stats.SetFillColor(0)
-      stats.SetBorderSize(1)
-      stats.SetMargin(0.)
-      stats.AddText('mean: %.2f, from hist: %.2f' % (graph_map[subdet][length][0], hist.GetMean()))
-      stats.AddText('RMS : %.2f, from hist: %.2f' % (graph_map[subdet][length][1], hist.GetRMS() ))
-      stats.AddText('overflow: %.0f' % (hist.GetBinContent(hist.GetNbinsX()+1)))
-      if showstat:
+      if showstat and lenght_based:
+         stats.SetFillColor(0)
+         stats.SetBorderSize(1)
+         stats.SetMargin(0.)
+         stats.AddText('mean: %.2f, from hist: %.2f' % (graph_map[subdet][length][0], hist.GetMean()))
+         stats.AddText('RMS : %.2f, from hist: %.2f' % (graph_map[subdet][length][1], hist.GetRMS() ))
+         stats.AddText('overflow: %.0f' % (hist.GetBinContent(hist.GetNbinsX()+1)))
          stats.Draw('same')
 
       c.Update()

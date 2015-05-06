@@ -159,11 +159,18 @@ public:
 		emap_(),
 		hmap_(),
 		prefix_(prefix),
-		hmax_(hmax) {}
+		hmax_(hmax) {
+		string names[] = {"UNKNOWN", "IB1", "IB2", "OB1", 
+												"OB2", "W1A", "W2A", "W3A", "W1B", "W2B", 
+												"W3B", "W4", "W5", "W6", "W7"};
+		for(size_t i =0; i < 15; i++){
+			harray_[i] = TH1F((prefix_+names[i]).c_str(), "", 100, 0, hmax_);
+		}
+	}
 
 	~Filler() {};
 
-	void add(int idx, double length, double val){
+	void add(int idx, double length, int type, double val){
 		//cout << "Filler::add(" << prefix_ << ", " << op_mode_ << ")"<<endl;
 		EntryMapIT found = emap_[idx].find(length);
 		if(found == emap_[idx].end()){
@@ -181,14 +188,19 @@ public:
 
 		emap_[idx][length].add( val);
 		hmap_[idx][length].Fill(val);
+		harray_[type].Fill(val);
 	}
 
 	EntryMap* emap(){return emap_;}
 	HMap* hmap(){return hmap_;}
+	void save_harray() {
+		for(size_t i =0; i < 15; i++) harray_[i].Write();
+	}
 	
 private:
 	EntryMap emap_[4];
 	HMap hmap_[4];
+	TH1F harray_[15];
 	string prefix_;
 	const string regions[4] = {"TIB", "TID", "TOB", "TEC"}; 
 	double hmax_;
@@ -243,7 +255,9 @@ void analyze_noise(string input_file, string output_file, bool gsim_, bool g1_, 
 	}
 
 	TkMap wrong_gain("wrong_gain.detlist"), no_noise("no_noise.detlist"), 
-		saturated_noise("saturated_noise.detlist");
+		saturated_noise("saturated_noise.detlist"), tid_pk_1("TID_8.8_secondpeak.detlist"),
+		tid_pk_2("TID_11_secondpeak.detlist"), tec_pk_1("TEC_8.5_secondpeak.detlist"),
+		tec_pk_2("TID_20_secondpeak.detlist");
 
   unsigned int detId, ring, istrip, dtype; 
   Int_t layer;
@@ -314,18 +328,27 @@ void analyze_noise(string input_file, string output_file, bool gsim_, bool g1_, 
 			else if(eg1.mean() > 0.8 && eg1.mean() < 1.4 && enoise.mean() > 2 && enoise.mean() > 40)
 				saturated_noise.add(prev_det);
 			
+			if(prev_subdet == 1 && prev_length < 8.9 && prev_length > 8.8 && enoise.mean()/eg1.mean() < 7 && enoise.mean()/eg1.mean() > 5)
+				tid_pk_1.add(prev_det);
+			if(prev_subdet == 1 && prev_length < 12 && prev_length > 10 && enoise.mean()/eg1.mean() < 7 && enoise.mean()/eg1.mean() < 14)
+				tid_pk_2.add(prev_det);
+			if(prev_subdet == 3 && prev_length < 8.6 && prev_length > 8.4 && enoise.mean()/eg1.mean() < 7 && enoise.mean()/eg1.mean() > 5)
+				tec_pk_1.add(prev_det);
+			if(prev_subdet == 1 && prev_length < 20.5 && prev_length > 20.4 && enoise.mean()/eg1.mean() < 7 && enoise.mean()/eg1.mean() > 5)
+				tec_pk_2.add(prev_det);
+
 			if(gain_){
-				fill_gain.add(prev_subdet, prev_length, eg1.mean());
+				fill_gain.add(prev_subdet, prev_length, prev_type, eg1.mean());
 				noise_vs_gain[prev_type].Fill(prev_apv, prev_det, eg1.mean(), enoise.mean());
 			}
 			if(gsim_){
-				fill_gsim.add(prev_subdet, prev_length, enoise.mean()/egsim.mean());
+				fill_gsim.add(prev_subdet, prev_length, prev_type, enoise.mean()/egsim.mean());
 			}
 			if(g1_){
-				fill_g1.add(prev_subdet, prev_length, enoise.mean()/eg1.mean());
+				fill_g1.add(prev_subdet, prev_length, prev_type, enoise.mean()/eg1.mean());
 			}
 			if(gratio_){
-				fill_gratio.add(prev_subdet, prev_length, (eg1.mean()*eg2.mean()/egsim.mean()) -1);
+				fill_gratio.add(prev_subdet, prev_length, prev_type, (eg1.mean()*eg2.mean()/egsim.mean()) -1);
 			}
 			enoise.reset(); 
 			eg1.reset();
@@ -368,6 +391,7 @@ void analyze_noise(string input_file, string output_file, bool gsim_, bool g1_, 
 				it->second.Write();
 			}			
 		}
+		fill_gain.save_harray();
 		for(size_t i =0; i < 15; i++){
 			noise_vs_gain[i].hist().Write();
 		}
@@ -376,6 +400,7 @@ void analyze_noise(string input_file, string output_file, bool gsim_, bool g1_, 
 		cout << "Saving GSim" << endl;
 		makeGraphs(outfile, "GSim"  , fill_gsim.emap());
 		HMap* hmap = fill_gsim.hmap();
+		fill_gsim.save_harray();
 		for(int i=0; i<4; i++){
 			for(HMapIT it = hmap[i].begin(); it != hmap[i].end(); ++it){
 				cout << "saving " << it->second.GetName() << endl;
@@ -387,6 +412,7 @@ void analyze_noise(string input_file, string output_file, bool gsim_, bool g1_, 
 		cout << "Saving G1" << endl;
 		makeGraphs(outfile, "G1"    , fill_g1.emap());
 		HMap* hmap = fill_g1.hmap();
+		fill_g1.save_harray();
 		for(int i=0; i<4; i++){
 			for(HMapIT it = hmap[i].begin(); it != hmap[i].end(); ++it){
 				cout << "saving " << it->second.GetName() << endl;
@@ -398,6 +424,7 @@ void analyze_noise(string input_file, string output_file, bool gsim_, bool g1_, 
 		cout << "Saving GRatio" << endl;
 		makeGraphs(outfile, "GRatio", fill_gratio.emap());
 		HMap* hmap = fill_gratio.hmap();
+		fill_gratio.save_harray();
 		for(int i=0; i<4; i++){
 			for(HMapIT it = hmap[i].begin(); it != hmap[i].end(); ++it){
 				cout << "saving " << it->second.GetName() << endl;
