@@ -66,6 +66,7 @@ with open(os.path.join(output_dir, 'Opts.raw_txt'), 'w') as out:
    out.write('-'*60+'\n')
    for i in ropts.iteritems():
       out.write(format % i)
+   out.write(format % ('plot opts', ' '.join(sys.argv[1:])))
 
 tfile.Close()
 
@@ -96,7 +97,7 @@ if not opts.plotOnly:
 logging.info('done')
 if opts.maps:
    for dlist in glob.glob(os.path.join(output_dir, '*.detlist')):
-      os.system('print_TrackerMap %s "" %s' % (dlist, dlist.replace('.detlist', '.png')))
+      os.system('print_TrackerMap %s "%s" %s' % (dlist, dlist.split('.')[0], dlist.replace('.detlist', '.png')))
 
 drawattrs = [
    ('TID' , {
@@ -219,32 +220,60 @@ def plot_dir(tfile, dirname, pngname, titletxt='',
          )
    c.SetLogy(False)
    if dirname == 'Gain':
-      regex= re.compile('[A-Z0-9]+_noise_vs_gain')
-      hsum = None
+      hsum = {}
       for key in keys:
-         if not regex.match(key.GetName()):
+         if 'tdirectory' not in key.GetClassName().lower():
             continue
-         subdet = key.GetName().split('_')[0]
-         hist = key.ReadObj()
-         hist.SetFillColor(ROOT.kBlue)
-         hist.SetLineColor(ROOT.kBlue)
-         hist.SetMaximum(1)
-         hist.Draw('box')
-         hist.GetXaxis().SetTitle('gain')
-         hist.GetYaxis().SetTitle('noise')
-         if not hsum:
-            hsum = hist.Clone('noise_vs_gain')
-         else:
-            hsum.Add(hist)
-         c.Update()
+         #set_trace()
+         tdir = key.ReadObj()
+         regions = ['diagonal', 'overflow', 'underflow', 'above', 'below', 'masked']
+         colors  = [ROOT.kBlue, ROOT.kRed, 8, 6, ROOT.kOrange+1, ROOT.kCyan]
+         samples = []
+         top = .999
+         for region, color in zip(regions, colors):
+            sam = ROOT.TPaveText(.7,top-0.04,.999,top, "brNDC")
+            top -= 0.04
+            sam.SetFillColor(0)
+            sam.SetBorderSize(0)
+            sam.SetMargin(0.)
+            sam.SetTextColor(color)
+            sam.AddText(region)
+            samples.append(sam)
+         
+         subdet = key.GetName()
+         keep = []
+         first_2d=True
+         for region, color in zip(regions, colors):
+            hist = tdir.Get(region)
+            hist.SetFillColor(color)
+            hist.SetLineColor(color)
+            hist.SetMaximum(1)
+            draw_opt = 'box' if first_2d else 'box same'
+            first_2d = False
+            hist.Draw(draw_opt)
+            hist.GetXaxis().SetTitle('gain')
+            hist.GetYaxis().SetTitle('noise')
+            if region not in hsum:
+               hsum[region] = hist.Clone('%s_noise_vs_gain' % region)
+            else:
+               hsum[region].Add(hist)
+            keep.append(hist)
+            [i.Draw() for i in samples]
+            c.Update()
          c.SaveAs(
             os.path.join(output_dir, '%s.png' % key.GetName())
             )
-      hsum.SetMaximum(1)
-      hsum.Draw('box')
+      first_2d = True
+      for hregion in hsum.itervalues():
+         hregion.SetMaximum(1)
+         draw_opt = 'box' if first_2d else 'box same'
+         first_2d = False
+         hregion.Draw(draw_opt)
+      #c.SetLogy()
+      [i.Draw() for i in samples]
       c.Update()
       c.SaveAs(
-         os.path.join(output_dir, '%s.png' % hsum.GetName())
+         os.path.join(output_dir, 'noise_vs_gain.png')
          )
 
 plot_file = ROOT.TFile.Open(output_tfile, "update")

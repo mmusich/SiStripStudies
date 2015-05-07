@@ -13,6 +13,7 @@
 #include <sstream>
 #include <fstream>
 #include <set>
+#include <algorithm>
 
 using namespace std;
 
@@ -78,7 +79,7 @@ void loadGraph(EntryMap &input_map, TGraphErrors* graph){
   }
 }
 
-void makeGraphs(TFile* file, string dirname, EntryMap *input_map){
+TDirectory* makeGraphs(TFile* file, string dirname, EntryMap *input_map){
   TDirectory * dir =file->mkdir(dirname.c_str());
   dir->cd();
   string regions[4] = {"TIB", "TID", "TOB", "TEC"};
@@ -90,6 +91,7 @@ void makeGraphs(TFile* file, string dirname, EntryMap *input_map){
     loadGraph(input_map[i], graph);
     graph->Write();
   }
+	return dir;
 }
 
 enum OpMode {STRIP_BASED, APV_BASED, MODULE_BASED};
@@ -245,20 +247,29 @@ void analyze_noise(string input_file, string output_file, bool gsim_, bool g1_, 
 	Filler fill_g1("G1_");
 	Filler fill_gratio("GRatio_");
 	Filler fill_gain("GAIN_", 2);
+
+	cout << "Booking 2D plots" << endl;
 	string det_types[] = {"UNKNOWN", "IB1", "IB2", "OB1", 
 												"OB2", "W1A", "W2A", "W3A", "W1B", "W2B", 
 												"W3B", "W4", "W5", "W6", "W7"};
-	Monitor2D noise_vs_gain[15];
+	Monitor2D noise_vs_gain[15][6];
 	string base("_noise_vs_gain");
 	for(size_t i =0; i < 15; i++){
-		noise_vs_gain[i] = Monitor2D(op_mode_, (det_types[i]+base).c_str(), 100, 0, 2, 208, 0, 52);
+		for(size_t j =0; j < 6; j++){
+			TUUID id;
+			string idc = id.AsString();
+			noise_vs_gain[i][j] = Monitor2D(op_mode_, idc.c_str(), 100, 0, 2, 124, 0, 31);
+		}
 	}
 
-	TkMap wrong_gain("wrong_gain.detlist"), no_noise("no_noise.detlist"), 
-		saturated_noise("saturated_noise.detlist"), tid_pk_1("TID_8.8_secondpeak.detlist"),
-		tid_pk_2("TID_11_secondpeak.detlist"), tec_pk_1("TEC_8.5_secondpeak.detlist"),
-		tec_pk_2("TID_20_secondpeak.detlist");
-
+	cout << "Booking Tracker maps" << endl;
+	TkMap *tkmaps[5];
+	string region_names[] = {"diagonal", "underflow", "below", "above", "overflow", "masked"};
+	for(size_t j =0; j < 5; j++){
+		tkmaps[j] = new TkMap(region_names[j+1]+".detlist");
+	}
+	cout << "Everything booked " << endl;
+	
   unsigned int detId, ring, istrip, dtype; 
   Int_t layer;
   float noise, gsim, g1, g2, length; 
@@ -291,7 +302,7 @@ void analyze_noise(string input_file, string output_file, bool gsim_, bool g1_, 
 	int prev_subdet=-1, prev_type=-1; 
 	double prev_length=-1;
 	Entry enoise, eg1, egsim, eg2;
-
+	bool masked = false;
   for(unsigned long int ientry=0; ientry <= entries; ientry++){
 		if(ientry < entries) tree->GetEntry(ientry);
 		else {
@@ -305,7 +316,6 @@ void analyze_noise(string input_file, string output_file, bool gsim_, bool g1_, 
 	   <<float(ientry)/entries << ")" << endl;
     }
     unsigned int idx=0;
-		if( mask_.has(detId, istrip/128) ) continue;
 
 		bool flush = false;
 		switch(op_mode_) {
@@ -321,25 +331,22 @@ void analyze_noise(string input_file, string output_file, bool gsim_, bool g1_, 
 		}
 
 		if(flush) {
-			if(eg1.mean() > 0.8 && eg1.mean() < 1.3 && enoise.mean() < 1.9)
-				no_noise.add(prev_det);
-			else if(eg1.mean() > 0.2 && eg1.mean() < 0.42 && enoise.mean() > 2 && enoise.mean() < 10)
-				wrong_gain.add(prev_det);
-			else if(eg1.mean() > 0.8 && eg1.mean() < 1.4 && enoise.mean() > 2 && enoise.mean() > 40)
-				saturated_noise.add(prev_det);
+			//Get Region ID
+			size_t region_ID = 0; //diagonal by default
+			if(masked) {
+				region_ID = 5;
+			}
+			else if(enoise.mean() < 1) region_ID = 1;
+			else if(enoise.mean() > 30) region_ID = 4;
+			else if(eg1.mean() > 0.2 && (enoise.mean() - 2.5*eg1.mean()) < 0.5)
+				region_ID = 2;
+			else if(enoise.mean() > 8.333*eg1.mean()) region_ID = 3;
 			
-			if(prev_subdet == 1 && prev_length < 8.9 && prev_length > 8.8 && enoise.mean()/eg1.mean() < 7 && enoise.mean()/eg1.mean() > 5)
-				tid_pk_1.add(prev_det);
-			if(prev_subdet == 1 && prev_length < 12 && prev_length > 10 && enoise.mean()/eg1.mean() < 7 && enoise.mean()/eg1.mean() < 14)
-				tid_pk_2.add(prev_det);
-			if(prev_subdet == 3 && prev_length < 8.6 && prev_length > 8.4 && enoise.mean()/eg1.mean() < 7 && enoise.mean()/eg1.mean() > 5)
-				tec_pk_1.add(prev_det);
-			if(prev_subdet == 1 && prev_length < 20.5 && prev_length > 20.4 && enoise.mean()/eg1.mean() < 7 && enoise.mean()/eg1.mean() > 5)
-				tec_pk_2.add(prev_det);
+			if(region_ID >= 1) tkmaps[region_ID-1]->add(prev_det);
 
 			if(gain_){
 				fill_gain.add(prev_subdet, prev_length, prev_type, eg1.mean());
-				noise_vs_gain[prev_type].Fill(prev_apv, prev_det, eg1.mean(), enoise.mean());
+				noise_vs_gain[prev_type][region_ID].Fill(prev_apv, prev_det, eg1.mean(), enoise.mean());
 			}
 			if(gsim_){
 				fill_gsim.add(prev_subdet, prev_length, prev_type, enoise.mean()/egsim.mean());
@@ -355,12 +362,16 @@ void analyze_noise(string input_file, string output_file, bool gsim_, bool g1_, 
 			egsim.reset();
 			eg2.reset();
 		}
+
+		masked = mask_.has(detId, istrip/128);
+		if( masked && op_mode_ != OpMode::APV_BASED && !gain_ ) continue;
 		if(ientry < entries) {
+
 			if(isTOB){idx=2;}
 			else if(isTEC){idx=3;}
 			else if(isTID){idx=1;}
 			
-			enoise.add(noise);
+			enoise.add(std::min<float>(noise, 30.5));
 			eg1.add(g1);
 			egsim.add(gsim);
 			eg2.add(g2);
@@ -383,17 +394,21 @@ void analyze_noise(string input_file, string output_file, bool gsim_, bool g1_, 
 	
 	if(gain_) {
 		cout << "Saving Gain" << endl;
-		makeGraphs(outfile, "Gain"  , fill_gain.emap());
-		HMap* hmap = fill_gain.hmap();
-		for(int i=0; i<4; i++){
-			for(HMapIT it = hmap[i].begin(); it != hmap[i].end(); ++it){
-				cout << "saving " << it->second.GetName() << endl;
-				it->second.Write();
-			}			
-		}
-		fill_gain.save_harray();
+		TDirectory * dir = makeGraphs(outfile, "Gain"  , fill_gain.emap());
+		// HMap* hmap = fill_gain.hmap();
+		// for(int i=0; i<4; i++){
+		// 	for(HMapIT it = hmap[i].begin(); it != hmap[i].end(); ++it){
+		// 		cout << "saving " << it->second.GetName() << endl;
+		// 		it->second.Write();
+		// 	}			
+		// }
+		// fill_gain.save_harray();
 		for(size_t i =0; i < 15; i++){
-			noise_vs_gain[i].hist().Write();
+			dir->mkdir(det_types[i].c_str())->cd();
+			for(size_t j =0; j < 6; j++){
+				noise_vs_gain[i][j].hist().SetName(region_names[j].c_str());
+				noise_vs_gain[i][j].hist().Write();
+			}
 		}
 	}	
   if(gsim_) {   
@@ -435,4 +450,7 @@ void analyze_noise(string input_file, string output_file, bool gsim_, bool g1_, 
   outfile->Write();
   outfile->Close();
   infile->Close();
+	for(size_t j =0; j < 4; j++){
+		delete tkmaps[j];
+	}
 }
