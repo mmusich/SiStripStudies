@@ -282,14 +282,14 @@ if opts.gsim:
    plots["GSim"] = {
       'titletxt' : 'stip noise from DB: %s \nAPVGain: %s' % (tags['SiStripNoisesRcd'], tags['SiStripApvGainSimRcd']),
       'xtitle' : 'strip length (cm)', 
-      'ytitle' :'noise (ADC counts)',
+      'ytitle' :'normalized noise (ADC counts)',
       'yrange' : eval(opts.yrange) if opts.yrange else (2,8)
       }
 if opts.g1:
    plots["G1"] = {
       'titletxt' : 'stip noise from DB: %s \nAPVGain: %s' % (tags['SiStripNoisesRcd'], tags['SiStripApvGainRcd']),
       'xtitle' : 'strip length (cm)',
-      'ytitle' :'noise (ADC counts)',
+      'ytitle' :'normalized noise (ADC counts)',
       'yrange' : eval(opts.yrange) if opts.yrange else (2,8)
       }
 if opts.gratio:
