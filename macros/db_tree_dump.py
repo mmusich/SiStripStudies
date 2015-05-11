@@ -1,3 +1,5 @@
+#! /bin/env cmsRun
+
 import FWCore.ParameterSet.Config as cms
 from fnmatch import fnmatch
 import FWCore.ParameterSet.VarParsing as VarParsing
