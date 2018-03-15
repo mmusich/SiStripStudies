@@ -37,6 +37,7 @@ options.register ('GlobalTag',
 
 options.parseArguments()
 
+process.load('Configuration.StandardSequences.GeometryRecoDB_cff') 
 
 process.MessageLogger = cms.Service(
     "MessageLogger",
@@ -50,11 +51,11 @@ process.maxEvents = cms.untracked.PSet(
     )
 
 process.source = cms.Source("EmptyIOVSource",
-    firstValue = cms.uint64(options.runNumber),
-    lastValue = cms.uint64(options.runNumber),
-    timetype = cms.string('runnumber'),
-    interval = cms.uint64(1)
-)
+                            firstValue = cms.uint64(options.runNumber),
+                            lastValue = cms.uint64(options.runNumber),
+                            timetype = cms.string('runnumber'),
+                            interval = cms.uint64(1)
+                            )
 
 connection_map = [
     # OLD DB version
@@ -88,7 +89,7 @@ if options.records:
 if options.GlobalTag:
     print "using global tag: %s" %options.GlobalTag
     process.load('Configuration.StandardSequences.FrontierConditions_GlobalTag_cff')
-    process.GlobalTag.globaltag = '%s::All' % options.GlobalTag
+    process.GlobalTag.globaltag = options.GlobalTag
     process.GlobalTag.DumpStat = cms.untracked.bool(True)
     process.GlobalTag.toGet = cms.VPSet(*records)
 else:
@@ -102,7 +103,7 @@ else:
         DumpStat = cms.untracked.bool(True),
         timetype = cms.untracked.string('runnumber'),
         toGet = cms.VPSet(records),
-        connect = cms.string('frontier://FrontierProd/CMS_COND_31X_STRIP')
+        connect = cms.string('frontier://FrontierProd/CMS_CONDITIONS')
         )
 
 process.TFileService = cms.Service(
