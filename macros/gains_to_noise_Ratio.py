@@ -80,9 +80,11 @@ def processTree(tree):
         idealnoiseratio[lay]=0.
         stripcount[lay]=0
 
+    i=0
     start=time.time()
     for entry in xrange(tree.GetEntries()):
         tree.GetEntry(entry)
+        progress(i,tree.GetEntries(), status='Processing file')
         if(subdetId[0]==3):
             cumulativeLayer=layer[0]
             idealnoiseratio[Layer(cumulativeLayer)]+= (noise[0]/g1[0])
@@ -99,7 +101,8 @@ def processTree(tree):
             cumulativeLayer= 16+abs(layer[0]) if (side[0]==1) else 25+abs(layer[0])
             idealnoiseratio[Layer(cumulativeLayer)]+= (noise[0]/g1[0])
             stripcount[Layer(cumulativeLayer)]+= 1
-    
+        i+=1
+
     print "processTree time:",time.time()-start
 
 
